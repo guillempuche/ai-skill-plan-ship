@@ -1,0 +1,13 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "plan-ship",
+  "version": "1.0.0",
+  "description": "Plan a change from a description, issue, or spec in its own git worktree, audit the plan, and wait for approval before implementing, testing, reviewing, and opening one pull request. Use when asked to \"plan and ship\" a feature or fix, or to take a change from idea to PR.",
+  "author": {
+    "name": "guillempuche",
+    "url": "https://github.com/guillempuche"
+  },
+  "homepage": "https://github.com/guillempuche/ai-skill-plan-ship",
+  "repository": "https://github.com/guillempuche/ai-skill-plan-ship",
+  "license": "MIT"
+}
