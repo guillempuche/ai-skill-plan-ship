@@ -2,9 +2,9 @@
 name: plan-ship
 description: Plan a change from a description, issue, or spec in its own git worktree, audit the plan, and wait for approval before implementing, testing, reviewing, and opening one pull request. Use when asked to "plan and ship" a feature or fix, or to take a change from idea to PR.
 license: MIT
-compatibility: Requires git. Opening the PR goes through the `pr` skill, which assumes GitHub and the `gh` CLI. Uses the `pr`, `commit`, and `test-bdd` skills when installed.
+compatibility: Requires git, and the `pr` skill to open the PR (which assumes GitHub and the `gh` CLI); without `pr` the run ends with the work implemented and uncommitted. Uses the `commit` and `test-bdd` skills when installed.
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   author: ai-standards
 allowed-tools: Bash Read Glob Grep AskUserQuestion Skill Agent
 ---
@@ -21,10 +21,11 @@ Takes one change from an idea to an open pull request, with one human checkpoint
 1. Implement, debugging your own work as you go.
 1. Add tests where they earn their place.
 1. Run a code review and fix only the findings that hold for this codebase.
-1. Hand off to the `pr` skill for readability, end-to-end verification, commits, and opening the PR — then stop.
+1. Hand off to the `pr` skill for readability, end-to-end verification, commits, and opening the PR — then stop, or keep the PR green as far as `--stop` says.
 
 Every step that names a tool or skill has a fallback.
 A missing tool changes *how* a step runs, never *whether* it runs; say which fallback you used.
+The one exception is the `pr` skill: without it the run ends before Step 8, as **Companion skills** in Step 0 explains.
 
 ## 0 — Input and options
 
@@ -51,31 +52,34 @@ If a worktree or branch for this task (same issue ID or branch name; `git worktr
 
 **Options** — accept each as a flag or in plain words ("just plan it" is `--stop plan`):
 
-| Option          | Values                     | Default                                     |
-| --------------- | -------------------------- | ------------------------------------------- |
-| `--branch`      | a branch name              | from the ticket ID, else a slug of the task |
-| `--draft`       | flag                       | the PR opens ready for review               |
-| `--stop`        | `plan`, `impl`, `pr`, `ci` | `pr`                                        |
-| `--audits`      | `0` to `3`                 | `2`                                         |
-| `--review`      | `high`, `xhigh`, `max`     | `high`                                      |
-| `--tests`       | `auto`, `none`, `thorough` | `auto`                                      |
-| `--commits`     | `one`, `few`               | `few`                                       |
-| `--no-approval` | flag                       | always stop for approval                    |
+| Option          | Values                               | Default                                     |
+| --------------- | ------------------------------------ | ------------------------------------------- |
+| `--branch`      | a branch name                        | from the ticket ID, else a slug of the task |
+| `--draft`       | flag                                 | the PR opens ready for review               |
+| `--stop`        | `plan`, `impl`, `pr`, `ci`, `review` | `pr`                                        |
+| `--audits`      | `0` to `3`                           | `2`                                         |
+| `--review`      | `quick`, `standard`, `deep`          | `standard`                                  |
+| `--tests`       | `auto`, `none`, `thorough`           | `auto`                                      |
+| `--commits`     | `one`, `few`                         | `few`                                       |
+| `--no-approval` | flag                                 | always stop for approval                    |
 
 Each step below says how its option changes it.
+The older `--review` values still work for now: `high` reads as `standard`, and `xhigh` and `max` as `deep`.
 
 **Repo defaults.**
-Read `.agents/git-workflow.md`, else `.claude/git-workflow.md`, then the `.local.md` file next to it, which overrides it key by key.
-A `plan-ship:` block in the file's YAML frontmatter sets defaults for any option above, and options in the request override it:
+Read the repo's `git-workflow.md` config, found as [`references/repo-config.md`](references/repo-config.md) describes (`.agents/`, else `.claude/`).
+Its `plan-ship:` block sets defaults for any option above, and options in the request override it.
+Its `worktrees`, `gates`, and `roles` keys override the defaults in the steps below.
 
-```yaml
-plan-ship:
-  audits: 1
-  review: xhigh
-  tests: thorough
-```
+**Agent tools.**
+Where a step below asks the user, briefs a fresh reviewer, or runs a review, use the row for this agent in [`references/agent-tools.md`](references/agent-tools.md).
 
-The same file's `worktrees`, `gates`, and `roles` keys override the defaults in the steps below; their format is in the `pr` skill's `references/repo-config.md`.
+**Companion skills.**
+Check the session's skill list now, before any planning, so a missing skill never surfaces after an hour of work:
+
+- `pr` missing → tell the user that the run will end after the code review with the work uncommitted, as `--stop impl` does, and that installing it (`npx skills add guillempuche/ai-standards --skill pr`, or the agent's plugin manager) lets it open the PR.
+  Carry on unless they want to install it first.
+- `commit` or `test-bdd` missing → say so in one line; the `pr` skill and Step 6 have fallbacks for them.
 
 **Echo back.**
 When you inferred the task or read an option from plain words, say in one line how you read the request, then carry on.
@@ -100,7 +104,7 @@ base=$(git symbolic-ref --short "refs/remotes/$remote/HEAD")   # e.g. origin/mai
 Shell variables do not survive between commands in most agents, so recompute `$remote` and `$base` this way wherever a later step uses them.
 With no remote at all, plan and implement, then stop as `--stop impl` does: there is nowhere to open a PR.
 
-Use `--branch` when given; otherwise name the branch as the `pr` skill's Step 1 describes (the ticket ID in the tracker's shape when there is one, else a short slug of the task).
+Use `--branch` when given; otherwise name the branch in the tracker's shape that [`references/tickets.md`](references/tickets.md) shows when the input names a ticket, else as a short slug of the task.
 If that name is taken — locally, on the remote, or checked out in another worktree — and it is this task's earlier run, resume it (Step 0); otherwise pick a new name and tell the user.
 
 Then pick where the work happens — the first case that applies wins.
@@ -223,7 +227,7 @@ Probes must not change anything: read-only queries against a local or dev databa
 Delete them afterwards; nothing from them lands in the worktree.
 
 **Round 1** is your own audit.
-**Every later round** needs eyes not anchored on the earlier ones: brief fresh reviewers as the reference describes — new subagents via `Agent` in Claude Code, one lens each, run in parallel; otherwise re-read the plan cold, once per lens, as a skeptical reviewer.
+**Every later round** needs eyes not anchored on the earlier ones: brief fresh reviewers as the reference describes, one lens each and in parallel where the agent allows, using the fresh-reviewer row of `agent-tools.md`.
 Reviewers return findings; you decide and edit the plan file.
 Each later round also checks that the previous round's fixes did not introduce new problems.
 Stop early, and say so, when a fresh-eyes round finds nothing that changes the plan; round 1 never ends the audit on its own when more rounds were asked for.
@@ -291,25 +295,16 @@ Record each skip in the plan's Edge cases table with its reason.
 
 ## 7 — Code review, verified finding by finding
 
-Review the whole diff against `$base` for correctness bugs, at the `--review` level (default `high`):
+Review the whole diff against `$base` for correctness bugs at the `--review` depth (default `standard`), using what the **Review depth** table in `agent-tools.md` lists for this agent.
+The work is still uncommitted here, so pick the form that covers staged, unstaged, and untracked changes (`codex review --uncommitted` in Codex).
 
-- Claude Code → the `code-review` skill at that level.
-- Codex → `codex review --uncommitted`, which covers staged, unstaged, and untracked changes.
-- Another agent with a built-in review command → that command, at its closest effort setting.
-- None of these → a fresh subagent given only the diff and the repo, or a cold self-review of the diff.
-
-A finding is a hypothesis, not a fact.
-For each one, decide whether it holds **in this codebase, for its real callers and inputs**:
-
-- Trace the path from the actual callers, or write a test or probe that triggers it.
-- Check whether the triggering input can occur here at all — a type, a validator, or an upstream guard may already rule it out.
-
-Fix only the findings you confirmed, add a regression test where Step 6's rules call for one, and re-run the tests.
-For each finding you dismissed, keep one line on why; the PR's review guide carries any you could not settle either way.
+Handle the findings as [`references/findings.md`](references/findings.md) describes: verify each one against its real callers and inputs, sort what holds into `important`, `pre-existing`, and `nit`, and act on each as it says.
+Add a regression test for each fix where Step 6's rules call for one, and re-run the tests.
 
 ## 8 — Hand off to `pr`, and stop
 
-With `--stop impl`, end here instead: leave the work uncommitted and report the worktree path, the changes, and anything left unverified.
+With `--stop impl`, or when the `pr` skill is not installed, end here instead: leave the work uncommitted and report the worktree path, the changes, and anything left unverified.
+Without `pr`, also say that this is why the run stopped, and that the user can commit and open the PR once it is installed.
 
 Otherwise fetch again first.
 If the base moved, rebase now as [`references/worktree.md`](references/worktree.md) shows under "Rebasing uncommitted work": the `pr` skill's own rebase fails on uncommitted work.
@@ -317,19 +312,21 @@ If the base moved, rebase now as [`references/worktree.md`](references/worktree.
 Then leave the work uncommitted, and run the `pr` skill on the worktree's branch.
 Tell it:
 
-- The code review already ran and its confirmed findings are fixed, so its Step 3 needs only the self-read checklist unless the code changed since.
-- Run its readability pass (the `readability-improver` agent where available).
-- Verify end to end before opening: use a verification command or skill if the session has one (such as `/verify` or `run` in Claude Code), otherwise run the changed path by hand as its Step 2 describes.
-- Land the commits through the `commit` skill: one with `--commits one`, otherwise a few focused ones.
-- Open exactly one pull request, as a draft only with `--draft`.
-- Link the issue, if the input named one.
-- Which config file you read, if it was `.agents/git-workflow.md`, so it and the `commit` skill read it too.
-- Carry the plan's unverified claims and dismissed-but-unsure review findings into the PR's `## Review guide`.
+- The code review already ran and its `important` findings are fixed, so its **Self-review** step needs only the self-read checklist unless the code changed since.
+- Land one commit with `--commits one`, otherwise a few focused ones.
+- Open the PR as a draft only with `--draft`.
+- The issue or ticket ID, if the input named one.
+- Carry the plan's unverified claims, and the review findings you could not settle or left as `pre-existing`, into the PR's `## Review guide`.
 
 The `pr` skill still shows each commit preview for the user's approval; `--no-approval` covers only the plan gate.
 
 Stop once the PR is open (`--stop pr`, the default): do not wait for CI, work the review, or merge.
-With `--stop ci`, watch the checks to green and fix failures the way the `pr` skill's Step 8 describes, then stop; never merge.
+Past that, the `pr` skill's **Keep the PR green** step does the work, and stops where the option says:
+
+- `--stop ci` — fix failing checks and conflicts until every required check is green.
+- `--stop review` — also answer review comments from people and bots, posting what changed and how to undo it after each push, until only a person's review is left or someone allowed to direct the agent says stop.
+
+Never merge, whatever `--stop` says.
 Report the PR URL, the branch and worktree path, and anything left unverified.
 Leave the worktree in place for follow-up fixes; the plan file stays in it, uncommitted.
 In case 3, tell the user their main checkout is still on the feature branch.
